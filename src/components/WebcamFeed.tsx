@@ -3,6 +3,7 @@ import * as tf from "@tensorflow/tfjs";
 import * as cocoSsd from "@tensorflow-models/coco-ssd";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Camera, CameraOff } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -12,8 +13,11 @@ interface Detection {
   confidence: number;
   width: number;
   height: number;
+  widthCm: number;
+  heightCm: number;
   x: number;
   y: number;
+  isVehicle: boolean;
 }
 
 const WebcamFeed = () => {
@@ -99,6 +103,27 @@ const WebcamFeed = () => {
     });
   };
 
+  // Função para converter pixels para centímetros (aproximação baseada na distância da câmera)
+  const pixelsToCm = (pixels: number, objectType: string) => {
+    // Fator de conversão aproximado (ajustável)
+    // Assume distância média de 50cm da câmera
+    const baseConversionFactor = 0.026458333; // 1 pixel = ~0.026cm a 50cm de distância
+    
+    // Ajustes específicos para diferentes tipos de objetos
+    const objectAdjustments: Record<string, number> = {
+      'car': 1.5, // Carros são maiores, geralmente mais distantes
+      'motorcycle': 1.3,
+      'bottle': 0.8, // Garrafas são menores, geralmente mais próximas
+      'cell phone': 0.6,
+      'laptop': 1.1,
+      'book': 0.9,
+      'cup': 0.7
+    };
+    
+    const adjustment = objectAdjustments[objectType] || 1.0;
+    return pixels * baseConversionFactor * adjustment;
+  };
+
   const startDetection = () => {
     if (!model || !videoRef.current) return;
 
@@ -127,17 +152,27 @@ const WebcamFeed = () => {
           // Processar detecções
           const newDetections: Detection[] = filteredPredictions.map((prediction, index) => {
             const [x, y, width, height] = prediction.bbox;
+            const isVehicle = ['car', 'motorcycle', 'bus', 'truck', 'bicycle'].includes(prediction.class);
+            
+            // Cores diferentes para veículos
+            const strokeColor = isVehicle ? "#ff6b35" : "#00ff00";
+            const fillColor = isVehicle ? "#ff6b35" : "#00ff00";
             
             // Desenhar bounding box
-            ctx.strokeStyle = "#00ff00";
-            ctx.lineWidth = 2;
+            ctx.strokeStyle = strokeColor;
+            ctx.lineWidth = isVehicle ? 3 : 2;
             ctx.strokeRect(x, y, width, height);
             
-            // Desenhar label
-            ctx.fillStyle = "#00ff00";
-            ctx.font = "16px Arial";
-            const text = `${prediction.class} (${Math.round(prediction.score * 100)}%)`;
-            ctx.fillText(text, x, y - 5);
+            // Desenhar label com destaque para veículos
+            ctx.fillStyle = fillColor;
+            ctx.font = isVehicle ? "18px Arial Bold" : "16px Arial";
+            const vehicleIcon = prediction.class === 'car' ? '🚗 ' : prediction.class === 'motorcycle' ? '🏍️ ' : '';
+            const text = `${vehicleIcon}${prediction.class} (${Math.round(prediction.score * 100)}%)`;
+            ctx.fillText(text, x, y - 8);
+
+            // Calcular dimensões em cm
+            const widthCm = pixelsToCm(width, prediction.class);
+            const heightCm = pixelsToCm(height, prediction.class);
 
             return {
               id: `${Date.now()}-${index}`,
@@ -145,8 +180,11 @@ const WebcamFeed = () => {
               confidence: prediction.score,
               width: Math.round(width),
               height: Math.round(height),
+              widthCm: Math.round(widthCm * 10) / 10, // 1 casa decimal
+              heightCm: Math.round(heightCm * 10) / 10,
               x: Math.round(x),
-              y: Math.round(y)
+              y: Math.round(y),
+              isVehicle
             };
           });
 
@@ -246,23 +284,41 @@ const WebcamFeed = () => {
             ) : (
               <div className="space-y-3 max-h-96 overflow-y-auto">
                 {detections.map((detection) => (
-                  <Card key={detection.id} className="bg-card/50 backdrop-blur-sm border-border/50">
+                  <Card 
+                    key={detection.id} 
+                    className={`bg-card/50 backdrop-blur-sm ${
+                      detection.isVehicle 
+                        ? 'border-primary/50 bg-primary/5' 
+                        : 'border-border/50'
+                    }`}
+                  >
                     <CardContent className="p-4">
                       <div className="flex justify-between items-start">
                         <div>
-                          <h4 className="font-semibold text-foreground capitalize">
+                          <h4 className={`font-semibold capitalize flex items-center gap-2 ${
+                            detection.isVehicle ? 'text-primary' : 'text-foreground'
+                          }`}>
+                            {detection.label === 'car' && '🚗'}
+                            {detection.label === 'motorcycle' && '🏍️'}
+                            {detection.isVehicle && <Badge variant="secondary" className="text-xs">VEÍCULO</Badge>}
                             {detection.label}
                           </h4>
                           <p className="text-sm text-muted-foreground">
                             Confiança: {Math.round(detection.confidence * 100)}%
                           </p>
                         </div>
-                        <div className="text-right text-sm">
+                        <div className="text-right text-sm space-y-1">
                           <div className="text-primary font-semibold">
+                            {detection.widthCm >= 100 
+                              ? `${(detection.widthCm / 100).toFixed(1)}m × ${(detection.heightCm / 100).toFixed(1)}m`
+                              : `${detection.widthCm}cm × ${detection.heightCm}cm`
+                            }
+                          </div>
+                          <div className="text-xs text-muted-foreground">
                             {detection.width} × {detection.height}px
                           </div>
-                          <div className="text-muted-foreground">
-                            Posição: ({detection.x}, {detection.y})
+                          <div className="text-xs text-muted-foreground">
+                            Pos: ({detection.x}, {detection.y})
                           </div>
                         </div>
                       </div>

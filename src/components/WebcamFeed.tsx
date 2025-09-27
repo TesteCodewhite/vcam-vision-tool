@@ -17,7 +17,15 @@ interface Detection {
   heightCm: number;
   x: number;
   y: number;
+  distance: number;
   isVehicle: boolean;
+}
+
+interface ObjectRecord {
+  label: string;
+  count: number;
+  lastSeen: Date;
+  avgConfidence: number;
 }
 
 const WebcamFeed = () => {
@@ -26,7 +34,10 @@ const WebcamFeed = () => {
   const [model, setModel] = useState<cocoSsd.ObjectDetection | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
   const [detections, setDetections] = useState<Detection[]>([]);
+  const [objectRecords, setObjectRecords] = useState<ObjectRecord[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [selectedCamera, setSelectedCamera] = useState<'user' | 'environment'>('environment');
+  const [availableCameras, setAvailableCameras] = useState<MediaDeviceInfo[]>([]);
   const { toast } = useToast();
   const detectionIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -37,9 +48,15 @@ const WebcamFeed = () => {
         await tf.ready();
         const loadedModel = await cocoSsd.load();
         setModel(loadedModel);
+        
+        // Detectar câmeras disponíveis
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoDevices = devices.filter(device => device.kind === 'videoinput');
+        setAvailableCameras(videoDevices);
+        
         toast({
           title: "Modelo carregado!",
-          description: "YOLOv8 está pronto para detectar objetos.",
+          description: "COCO-SSD está pronto para detectar objetos.",
         });
       } catch (error) {
         console.error("Erro ao carregar modelo:", error);
@@ -58,9 +75,15 @@ const WebcamFeed = () => {
 
   const startWebcam = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 640, height: 480 }
-      });
+      const constraints = {
+        video: { 
+          width: 640, 
+          height: 480,
+          facingMode: selectedCamera
+        }
+      };
+      
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
       
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
@@ -70,7 +93,7 @@ const WebcamFeed = () => {
         
         toast({
           title: "Câmera ativada!",
-          description: "Detecção de objetos iniciada.",
+          description: `Detecção iniciada com câmera ${selectedCamera === 'environment' ? 'traseira' : 'frontal'}.`,
         });
       }
     } catch (error) {
@@ -103,25 +126,72 @@ const WebcamFeed = () => {
     });
   };
 
-  // Função para converter pixels para centímetros (aproximação baseada na distância da câmera)
-  const pixelsToCm = (pixels: number, objectType: string) => {
-    // Fator de conversão aproximado (ajustável)
-    // Assume distância média de 50cm da câmera
-    const baseConversionFactor = 0.026458333; // 1 pixel = ~0.026cm a 50cm de distância
-    
-    // Ajustes específicos para diferentes tipos de objetos
-    const objectAdjustments: Record<string, number> = {
-      'car': 1.5, // Carros são maiores, geralmente mais distantes
-      'motorcycle': 1.3,
-      'bottle': 0.8, // Garrafas são menores, geralmente mais próximas
-      'cell phone': 0.6,
-      'laptop': 1.1,
-      'book': 0.9,
-      'cup': 0.7
+  // Função melhorada para converter pixels para centímetros e calcular distância
+  const calculateObjectMeasurements = (pixelWidth: number, pixelHeight: number, objectType: string) => {
+    // Tamanhos reais conhecidos de objetos comuns (em cm)
+    const realObjectSizes: Record<string, { width: number; height: number }> = {
+      'cell phone': { width: 7.5, height: 15.5 }, // iPhone/Android médio
+      'bottle': { width: 6.5, height: 25.0 }, // Garrafa de água 500ml
+      'cup': { width: 8.0, height: 9.5 }, // Xícara padrão
+      'laptop': { width: 30.0, height: 21.0 }, // Laptop 14"
+      'book': { width: 15.0, height: 23.0 }, // Livro padrão
+      'car': { width: 180.0, height: 150.0 }, // Carro médio
+      'motorcycle': { width: 80.0, height: 120.0 }, // Moto
+      'mouse': { width: 6.0, height: 11.0 }, // Mouse de computador
+      'keyboard': { width: 45.0, height: 15.0 }, // Teclado
+      'banana': { width: 3.0, height: 18.0 }, // Banana
+      'apple': { width: 8.0, height: 8.5 }, // Maçã
+      'orange': { width: 7.5, height: 7.5 }, // Laranja
     };
     
-    const adjustment = objectAdjustments[objectType] || 1.0;
-    return pixels * baseConversionFactor * adjustment;
+    const realSize = realObjectSizes[objectType];
+    if (!realSize) {
+      // Fallback para objetos desconhecidos
+      return {
+        widthCm: Math.round(pixelWidth * 0.03 * 10) / 10,
+        heightCm: Math.round(pixelHeight * 0.03 * 10) / 10,
+        distance: 50 // Distância padrão
+      };
+    }
+    
+    // Calcular distância baseada no tamanho conhecido do objeto
+    // Fórmula: distância = (tamanho_real * distância_focal) / tamanho_pixel
+    const focalLength = 600; // Distância focal aproximada em pixels para webcam
+    const distanceFromWidth = (realSize.width * focalLength) / pixelWidth;
+    const distanceFromHeight = (realSize.height * focalLength) / pixelHeight;
+    const estimatedDistance = Math.round((distanceFromWidth + distanceFromHeight) / 2);
+    
+    return {
+      widthCm: realSize.width,
+      heightCm: realSize.height,
+      distance: Math.max(20, Math.min(300, estimatedDistance)) // Limitar entre 20cm e 3m
+    };
+  };
+  
+  // Função para atualizar registro de objetos
+  const updateObjectRecord = (label: string, confidence: number) => {
+    setObjectRecords(prev => {
+      const existing = prev.find(record => record.label === label);
+      if (existing) {
+        return prev.map(record => 
+          record.label === label 
+            ? {
+                ...record,
+                count: record.count + 1,
+                lastSeen: new Date(),
+                avgConfidence: (record.avgConfidence + confidence) / 2
+              }
+            : record
+        );
+      } else {
+        return [...prev, {
+          label,
+          count: 1,
+          lastSeen: new Date(),
+          avgConfidence: confidence
+        }];
+      }
+    });
   };
 
   const startDetection = () => {
@@ -170,9 +240,11 @@ const WebcamFeed = () => {
             const text = `${vehicleIcon}${prediction.class} (${Math.round(prediction.score * 100)}%)`;
             ctx.fillText(text, x, y - 8);
 
-            // Calcular dimensões em cm
-            const widthCm = pixelsToCm(width, prediction.class);
-            const heightCm = pixelsToCm(height, prediction.class);
+            // Calcular dimensões e distância
+            const measurements = calculateObjectMeasurements(width, height, prediction.class);
+            
+            // Atualizar registro do objeto
+            updateObjectRecord(prediction.class, prediction.score);
 
             return {
               id: `${Date.now()}-${index}`,
@@ -180,8 +252,9 @@ const WebcamFeed = () => {
               confidence: prediction.score,
               width: Math.round(width),
               height: Math.round(height),
-              widthCm: Math.round(widthCm * 10) / 10, // 1 casa decimal
-              heightCm: Math.round(heightCm * 10) / 10,
+              widthCm: measurements.widthCm,
+              heightCm: measurements.heightCm,
+              distance: measurements.distance,
               x: Math.round(x),
               y: Math.round(y),
               isVehicle
@@ -213,29 +286,51 @@ const WebcamFeed = () => {
             Use sua webcam para detectar objetos e suas dimensões em tempo real
           </p>
           
-          <div className="flex justify-center gap-4 mb-8">
-            {!isStreaming ? (
-              <Button
-                onClick={startWebcam}
-                disabled={!model || isLoading}
-                className="bg-gradient-primary hover:shadow-glow-primary"
-              >
-                <Camera className="w-4 h-4 mr-2" />
-                {isLoading ? "Carregando modelo..." : "Iniciar Câmera"}
-              </Button>
-            ) : (
-              <Button
-                onClick={stopWebcam}
-                variant="destructive"
-              >
-                <CameraOff className="w-4 h-4 mr-2" />
-                Parar Câmera
-              </Button>
+          <div className="flex flex-col items-center gap-4 mb-8">
+            {/* Seleção de câmera para dispositivos móveis */}
+            {availableCameras.length > 1 && (
+              <div className="flex gap-2">
+                <Button
+                  variant={selectedCamera === 'environment' ? 'default' : 'outline'}
+                  onClick={() => setSelectedCamera('environment')}
+                  size="sm"
+                >
+                  📱 Traseira
+                </Button>
+                <Button
+                  variant={selectedCamera === 'user' ? 'default' : 'outline'}
+                  onClick={() => setSelectedCamera('user')}
+                  size="sm"
+                >
+                  🤳 Frontal
+                </Button>
+              </div>
             )}
+            
+            <div className="flex gap-4">
+              {!isStreaming ? (
+                <Button
+                  onClick={startWebcam}
+                  disabled={!model || isLoading}
+                  className="bg-gradient-primary hover:shadow-glow-primary"
+                >
+                  <Camera className="w-4 h-4 mr-2" />
+                  {isLoading ? "Carregando modelo..." : "Iniciar Câmera"}
+                </Button>
+              ) : (
+                <Button
+                  onClick={stopWebcam}
+                  variant="destructive"
+                >
+                  <CameraOff className="w-4 h-4 mr-2" />
+                  Parar Câmera
+                </Button>
+              )}
+            </div>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Feed da câmera */}
           <div className="relative">
             <Card className="bg-card/50 backdrop-blur-sm border-border/50">
@@ -307,18 +402,74 @@ const WebcamFeed = () => {
                             Confiança: {Math.round(detection.confidence * 100)}%
                           </p>
                         </div>
-                        <div className="text-right text-sm space-y-1">
-                          <div className="text-primary font-semibold">
-                            {detection.widthCm >= 100 
-                              ? `${(detection.widthCm / 100).toFixed(1)}m × ${(detection.heightCm / 100).toFixed(1)}m`
-                              : `${detection.widthCm}cm × ${detection.heightCm}cm`
-                            }
-                          </div>
+                         <div className="text-right text-sm space-y-1">
+                           <div className="text-primary font-semibold">
+                             {detection.widthCm >= 100 
+                               ? `${(detection.widthCm / 100).toFixed(1)}m × ${(detection.heightCm / 100).toFixed(1)}m`
+                               : `${detection.widthCm}cm × ${detection.heightCm}cm`
+                             }
+                           </div>
+                           <div className="text-xs text-accent font-medium">
+                             📏 Distância: {detection.distance}cm
+                           </div>
+                           <div className="text-xs text-muted-foreground">
+                             {detection.width} × {detection.height}px
+                           </div>
+                           <div className="text-xs text-muted-foreground">
+                             Pos: ({detection.x}, {detection.y})
+                           </div>
+                         </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Registro de Objetos Detectados */}
+          <div className="space-y-4">
+            <h3 className="text-2xl font-bold text-foreground">
+              Registro de Objetos ({objectRecords.length})
+            </h3>
+            
+            {objectRecords.length === 0 ? (
+              <Card className="bg-card/50 backdrop-blur-sm border-border/50">
+                <CardContent className="p-6 text-center">
+                  <p className="text-muted-foreground">
+                    Nenhum objeto registrado ainda
+                  </p>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="space-y-3 max-h-96 overflow-y-auto">
+                {objectRecords
+                  .sort((a, b) => b.count - a.count)
+                  .map((record, index) => (
+                  <Card key={record.label} className="bg-card/50 backdrop-blur-sm border-border/50">
+                    <CardContent className="p-4">
+                      <div className="flex justify-between items-center">
+                        <div>
+                          <h4 className="font-semibold capitalize flex items-center gap-2">
+                            {record.label === 'car' && '🚗'}
+                            {record.label === 'motorcycle' && '🏍️'}
+                            {record.label === 'cell phone' && '📱'}
+                            {record.label === 'bottle' && '🍼'}
+                            {record.label === 'cup' && '☕'}
+                            {record.label === 'laptop' && '💻'}
+                            {record.label === 'book' && '📚'}
+                            {record.label}
+                          </h4>
+                          <p className="text-xs text-muted-foreground">
+                            Última detecção: {record.lastSeen.toLocaleTimeString()}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <Badge variant="secondary" className="mb-1">
+                            {record.count}x visto
+                          </Badge>
                           <div className="text-xs text-muted-foreground">
-                            {detection.width} × {detection.height}px
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            Pos: ({detection.x}, {detection.y})
+                            Confiança média: {Math.round(record.avgConfidence * 100)}%
                           </div>
                         </div>
                       </div>

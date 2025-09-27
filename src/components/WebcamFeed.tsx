@@ -6,6 +6,9 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Camera, CameraOff } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useDynamicSizing } from "@/hooks/useDynamicSizing";
+import { TextRecognition } from "@/components/TextRecognition";
+import { VersionControl } from "@/components/VersionControl";
 
 interface Detection {
   id: string;
@@ -38,8 +41,16 @@ const WebcamFeed = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [selectedCamera, setSelectedCamera] = useState<'user' | 'environment'>('environment');
   const [availableCameras, setAvailableCameras] = useState<MediaDeviceInfo[]>([]);
+  const [currentFeatures, setCurrentFeatures] = useState({
+    basic_detection: true,
+    size_calculation: 'dynamic',
+    vehicle_highlight: true,
+    text_recognition: true,
+    machine_learning: true
+  });
   const { toast } = useToast();
   const detectionIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const { calculateDynamicSize, loadLearnedObjects } = useDynamicSizing();
 
   useEffect(() => {
     const loadModel = async () => {
@@ -53,6 +64,9 @@ const WebcamFeed = () => {
         const devices = await navigator.mediaDevices.enumerateDevices();
         const videoDevices = devices.filter(device => device.kind === 'videoinput');
         setAvailableCameras(videoDevices);
+        
+        // Carregar objetos aprendidos
+        await loadLearnedObjects();
         
         toast({
           title: "Modelo carregado!",
@@ -71,7 +85,7 @@ const WebcamFeed = () => {
     };
 
     loadModel();
-  }, [toast]);
+  }, [toast, loadLearnedObjects]);
 
   const startWebcam = async () => {
     try {
@@ -220,7 +234,10 @@ const WebcamFeed = () => {
           ctx.clearRect(0, 0, canvas.width, canvas.height);
 
           // Processar detecções
-          const newDetections: Detection[] = filteredPredictions.map((prediction, index) => {
+          const newDetections: Detection[] = [];
+          
+          for (let index = 0; index < filteredPredictions.length; index++) {
+            const prediction = filteredPredictions[index];
             const [x, y, width, height] = prediction.bbox;
             const isVehicle = ['car', 'motorcycle', 'bus', 'truck', 'bicycle'].includes(prediction.class);
             
@@ -240,13 +257,15 @@ const WebcamFeed = () => {
             const text = `${vehicleIcon}${prediction.class} (${Math.round(prediction.score * 100)}%)`;
             ctx.fillText(text, x, y - 8);
 
-            // Calcular dimensões e distância
-            const measurements = calculateObjectMeasurements(width, height, prediction.class);
+            // Calcular dimensões e distância usando sistema dinâmico
+            const measurements = currentFeatures.size_calculation === 'dynamic' 
+              ? await calculateDynamicSize(width, height, prediction.class, prediction.score)
+              : calculateObjectMeasurements(width, height, prediction.class);
             
             // Atualizar registro do objeto
             updateObjectRecord(prediction.class, prediction.score);
 
-            return {
+            const detection: Detection = {
               id: `${Date.now()}-${index}`,
               label: prediction.class,
               confidence: prediction.score,
@@ -259,7 +278,9 @@ const WebcamFeed = () => {
               y: Math.round(y),
               isVehicle
             };
-          });
+            
+            newDetections.push(detection);
+          }
 
           setDetections(newDetections);
         }
@@ -330,7 +351,7 @@ const WebcamFeed = () => {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
           {/* Feed da câmera */}
           <div className="relative">
             <Card className="bg-card/50 backdrop-blur-sm border-border/50">
@@ -477,6 +498,22 @@ const WebcamFeed = () => {
                   </Card>
                 ))}
               </div>
+            )}
+          </div>
+
+          {/* Controle de Versão */}
+          <div className="space-y-4">
+            <VersionControl 
+              onVersionChange={setCurrentFeatures}
+              currentFeatures={currentFeatures}
+            />
+            
+            {/* Reconhecimento de Texto */}
+            {currentFeatures.text_recognition && (
+              <TextRecognition 
+                videoRef={videoRef}
+                isActive={isStreaming}
+              />
             )}
           </div>
         </div>

@@ -14,7 +14,165 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      learned_objects: {
+        Row: {
+          avg_height_cm: number
+          avg_width_cm: number
+          brand: string | null
+          color: string | null
+          confidence_threshold: number | null
+          created_at: string
+          detection_count: number | null
+          id: string
+          last_seen: string
+          model: string | null
+          object_type: string
+          updated_at: string
+        }
+        Insert: {
+          avg_height_cm: number
+          avg_width_cm: number
+          brand?: string | null
+          color?: string | null
+          confidence_threshold?: number | null
+          created_at?: string
+          detection_count?: number | null
+          id?: string
+          last_seen?: string
+          model?: string | null
+          object_type: string
+          updated_at?: string
+        }
+        Update: {
+          avg_height_cm?: number
+          avg_width_cm?: number
+          brand?: string | null
+          color?: string | null
+          confidence_threshold?: number | null
+          created_at?: string
+          detection_count?: number | null
+          id?: string
+          last_seen?: string
+          model?: string | null
+          object_type?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      object_detections: {
+        Row: {
+          actual_height_cm: number | null
+          actual_width_cm: number | null
+          camera_distance: number | null
+          confidence: number
+          created_at: string
+          distance_cm: number | null
+          id: string
+          learned_size: boolean | null
+          object_type: string
+          pixel_height: number
+          pixel_width: number
+          updated_at: string
+        }
+        Insert: {
+          actual_height_cm?: number | null
+          actual_width_cm?: number | null
+          camera_distance?: number | null
+          confidence: number
+          created_at?: string
+          distance_cm?: number | null
+          id?: string
+          learned_size?: boolean | null
+          object_type: string
+          pixel_height: number
+          pixel_width: number
+          updated_at?: string
+        }
+        Update: {
+          actual_height_cm?: number | null
+          actual_width_cm?: number | null
+          camera_distance?: number | null
+          confidence?: number
+          created_at?: string
+          distance_cm?: number | null
+          id?: string
+          learned_size?: boolean | null
+          object_type?: string
+          pixel_height?: number
+          pixel_width?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      project_versions: {
+        Row: {
+          algorithm_version: string
+          created_at: string
+          description: string | null
+          features_enabled: Json
+          id: string
+          is_active: boolean | null
+          version_name: string
+        }
+        Insert: {
+          algorithm_version?: string
+          created_at?: string
+          description?: string | null
+          features_enabled?: Json
+          id?: string
+          is_active?: boolean | null
+          version_name: string
+        }
+        Update: {
+          algorithm_version?: string
+          created_at?: string
+          description?: string | null
+          features_enabled?: Json
+          id?: string
+          is_active?: boolean | null
+          version_name?: string
+        }
+        Relationships: []
+      }
+      text_detections: {
+        Row: {
+          confidence: number
+          created_at: string
+          detected_text: string
+          height: number
+          id: string
+          is_license_plate: boolean | null
+          object_type: string | null
+          width: number
+          x_position: number
+          y_position: number
+        }
+        Insert: {
+          confidence: number
+          created_at?: string
+          detected_text: string
+          height: number
+          id?: string
+          is_license_plate?: boolean | null
+          object_type?: string | null
+          width: number
+          x_position: number
+          y_position: number
+        }
+        Update: {
+          confidence?: number
+          created_at?: string
+          detected_text?: string
+          height?: number
+          id?: string
+          is_license_plate?: boolean | null
+          object_type?: string | null
+          width?: number
+          x_position?: number
+          y_position?: number
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

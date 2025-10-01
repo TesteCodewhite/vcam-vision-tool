@@ -241,9 +241,27 @@ const WebcamFeed = () => {
             const [x, y, width, height] = prediction.bbox;
             const isVehicle = ['car', 'motorcycle', 'bus', 'truck', 'bicycle'].includes(prediction.class);
             
-            // Cores diferentes para veículos
-            const strokeColor = isVehicle ? "#ff6b35" : "#00ff00";
-            const fillColor = isVehicle ? "#ff6b35" : "#00ff00";
+            // Sistema de cores por categoria
+            const getColorForObject = (objClass: string) => {
+              const colors: Record<string, string> = {
+                'car': '#ff6b35',
+                'motorcycle': '#ff8c42',
+                'bus': '#ff4757',
+                'truck': '#ff6348',
+                'bicycle': '#ffa502',
+                'cell phone': '#00d2d3',
+                'laptop': '#0abde3',
+                'bottle': '#10ac84',
+                'cup': '#00cec9',
+                'book': '#a29bfe',
+                'keyboard': '#6c5ce7',
+                'mouse': '#fd79a8',
+              };
+              return colors[objClass] || '#00ff00';
+            };
+            
+            const strokeColor = getColorForObject(prediction.class);
+            const fillColor = strokeColor;
             
             // Desenhar bounding box
             ctx.strokeStyle = strokeColor;
@@ -351,17 +369,18 @@ const WebcamFeed = () => {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+        <div className="grid grid-cols-1 xl:grid-cols-[2fr,1fr,1fr,1fr] gap-6 lg:gap-8">
           {/* Feed da câmera */}
-          <div className="relative">
+          <div className="relative xl:col-span-1">
             <Card className="bg-card/50 backdrop-blur-sm border-border/50">
               <CardContent className="p-6">
                 <div className="relative bg-black rounded-lg overflow-hidden">
                   <video
                     ref={videoRef}
                     className="w-full h-auto"
-                    style={{ maxHeight: "400px" }}
+                    style={{ maxHeight: "500px", aspectRatio: "4/3" }}
                     muted
+                    playsInline
                   />
                   <canvas
                     ref={canvasRef}
@@ -384,8 +403,8 @@ const WebcamFeed = () => {
           </div>
 
           {/* Resultados das detecções */}
-          <div className="space-y-4">
-            <h3 className="text-2xl font-bold text-foreground">
+          <div className="space-y-4 xl:col-span-1">
+            <h3 className="text-xl lg:text-2xl font-bold text-foreground">
               Objetos Detectados ({detections.length})
             </h3>
             
@@ -402,11 +421,11 @@ const WebcamFeed = () => {
                 {detections.map((detection) => (
                   <Card 
                     key={detection.id} 
-                    className={`bg-card/50 backdrop-blur-sm ${
-                      detection.isVehicle 
-                        ? 'border-primary/50 bg-primary/5' 
-                        : 'border-border/50'
-                    }`}
+                    className="bg-card/50 backdrop-blur-sm border-border/50"
+                    style={{
+                      borderLeftWidth: '4px',
+                      borderLeftColor: detection.isVehicle ? '#ff6b35' : '#00d2d3'
+                    }}
                   >
                     <CardContent className="p-4">
                       <div className="flex justify-between items-start">
@@ -449,8 +468,8 @@ const WebcamFeed = () => {
           </div>
 
           {/* Registro de Objetos Detectados */}
-          <div className="space-y-4">
-            <h3 className="text-2xl font-bold text-foreground">
+          <div className="space-y-4 xl:col-span-1">
+            <h3 className="text-xl lg:text-2xl font-bold text-foreground">
               Registro de Objetos ({objectRecords.length})
             </h3>
             
@@ -502,7 +521,7 @@ const WebcamFeed = () => {
           </div>
 
           {/* Controle de Versão */}
-          <div className="space-y-4">
+          <div className="space-y-4 xl:col-span-1">
             <VersionControl 
               onVersionChange={setCurrentFeatures}
               currentFeatures={currentFeatures}

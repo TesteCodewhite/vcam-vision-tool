@@ -75,12 +75,12 @@ export const TextRecognition = ({ videoRef, isActive }: TextRecognitionProps) =>
       canvas.height = video.videoHeight;
       ctx.drawImage(video, 0, 0);
 
-      // Converter para imagem
-      const imageData = canvas.toDataURL('image/png');
+      // Pré-processamento da imagem para melhorar OCR
+      const imageDataUrl = preprocessImageForOCR(ctx, canvas);
 
-      // Executar OCR
-      const { data } = await Tesseract.recognize(imageData, 'eng+por', {
-        logger: m => console.log(m)
+      // Executar OCR com configurações otimizadas para placas
+      const { data } = await Tesseract.recognize(imageDataUrl, 'eng+por', {
+        logger: m => console.log(m),
       });
 
       // Processar resultados
@@ -113,16 +113,37 @@ export const TextRecognition = ({ videoRef, isActive }: TextRecognitionProps) =>
     }
   };
 
+  const preprocessImageForOCR = (ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement): string => {
+    // Pegar dados da imagem
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imageData.data;
+    
+    // Converter para escala de cinza e aplicar contrast enhancement
+    for (let i = 0; i < data.length; i += 4) {
+      const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+      // Aumentar contraste
+      const enhanced = avg < 128 ? Math.max(0, avg - 30) : Math.min(255, avg + 30);
+      data[i] = enhanced;
+      data[i + 1] = enhanced;
+      data[i + 2] = enhanced;
+    }
+    
+    ctx.putImageData(imageData, 0, 0);
+    return canvas.toDataURL('image/png');
+  };
+
   const detectLicensePlate = (text: string): boolean => {
-    // Padrões brasileiros de placa
+    // Padrões brasileiros e internacionais de placa
     const patterns = [
-      /^[A-Z]{3}[0-9]{4}$/, // ABC1234 (padrão antigo)
+      /^[A-Z]{3}[0-9]{4}$/, // ABC1234 (Brasil antigo)
       /^[A-Z]{3}[0-9][A-Z][0-9]{2}$/, // ABC1D23 (Mercosul)
       /^[A-Z]{3}-?[0-9]{4}$/, // ABC-1234
-      /^[A-Z]{3}-?[0-9][A-Z][0-9]{2}$/ // ABC-1D23
+      /^[A-Z]{3}-?[0-9][A-Z][0-9]{2}$/, // ABC-1D23
+      /^[A-Z]{2}[0-9]{2}[A-Z]{3}$/, // Europeu
+      /^[A-Z]{3}[0-9]{3}$/, // Internacional
     ];
 
-    const cleanText = text.replace(/[^A-Z0-9]/g, '');
+    const cleanText = text.replace(/[^A-Z0-9]/g, '').toUpperCase();
     return patterns.some(pattern => pattern.test(cleanText));
   };
 

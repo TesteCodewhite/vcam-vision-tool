@@ -4,9 +4,11 @@ import * as cocoSsd from "@tensorflow-models/coco-ssd";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Camera, CameraOff } from "lucide-react";
+import { Camera, CameraOff, Clock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useDynamicSizing } from "@/hooks/useDynamicSizing";
+import { useColorDetection } from "@/hooks/useColorDetection";
+import { useObjectTracking } from "@/hooks/useObjectTracking";
 import { TextRecognition } from "@/components/TextRecognition";
 import { VersionControl } from "@/components/VersionControl";
 
@@ -22,6 +24,8 @@ interface Detection {
   y: number;
   distance: number;
   isVehicle: boolean;
+  color: string;
+  colorName: string;
 }
 
 interface ObjectRecord {
@@ -51,6 +55,8 @@ const WebcamFeed = () => {
   const { toast } = useToast();
   const detectionIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const { calculateDynamicSize, loadLearnedObjects } = useDynamicSizing();
+  const { getDominantColor } = useColorDetection();
+  const { trackedObjects, updateTracking, clearTracking } = useObjectTracking();
 
   useEffect(() => {
     const loadModel = async () => {
@@ -133,6 +139,7 @@ const WebcamFeed = () => {
     
     setIsStreaming(false);
     setDetections([]);
+    clearTracking();
     
     toast({
       title: "Câmera desativada",
@@ -241,6 +248,12 @@ const WebcamFeed = () => {
             const [x, y, width, height] = prediction.bbox;
             const isVehicle = ['car', 'motorcycle', 'bus', 'truck', 'bicycle'].includes(prediction.class);
             
+            // Detectar cor dominante
+            const colorInfo = getDominantColor(video, prediction.bbox);
+            
+            // Atualizar tracking
+            await updateTracking(prediction.class, colorInfo.name, prediction.score);
+            
             // Sistema de cores por categoria
             const getColorForObject = (objClass: string) => {
               const colors: Record<string, string> = {
@@ -294,7 +307,9 @@ const WebcamFeed = () => {
               distance: measurements.distance,
               x: Math.round(x),
               y: Math.round(y),
-              isVehicle
+              isVehicle,
+              color: colorInfo.hex,
+              colorName: colorInfo.name
             };
             
             newDetections.push(detection);
@@ -315,13 +330,13 @@ const WebcamFeed = () => {
   }, []);
 
   return (
-    <section className="py-16 px-6">
-      <div className="container mx-auto max-w-6xl">
-        <div className="text-center mb-8">
-          <h2 className="text-4xl md:text-5xl font-bold bg-gradient-to-r from-secondary to-accent bg-clip-text text-transparent mb-4">
+    <section className="py-8 sm:py-12 lg:py-16 px-4 sm:px-6">
+      <div className="container mx-auto max-w-7xl">
+        <div className="text-center mb-6 sm:mb-8">
+          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold bg-gradient-to-r from-secondary to-accent bg-clip-text text-transparent mb-4">
             Detecção em Tempo Real
           </h2>
-          <p className="text-lg text-muted-foreground mb-8">
+          <p className="text-base sm:text-lg text-muted-foreground mb-6 sm:mb-8">
             Use sua webcam para detectar objetos e suas dimensões em tempo real
           </p>
           
@@ -369,9 +384,9 @@ const WebcamFeed = () => {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 xl:grid-cols-[2fr,1fr,1fr,1fr] gap-6 lg:gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-[1.5fr,1fr,1fr] gap-4 lg:gap-6">
           {/* Feed da câmera */}
-          <div className="relative xl:col-span-1">
+          <div className="relative lg:col-span-2 xl:col-span-1">
             <Card className="bg-card/50 backdrop-blur-sm border-border/50">
               <CardContent className="p-6">
                 <div className="relative bg-black rounded-lg overflow-hidden">
@@ -403,8 +418,8 @@ const WebcamFeed = () => {
           </div>
 
           {/* Resultados das detecções */}
-          <div className="space-y-4 xl:col-span-1">
-            <h3 className="text-xl lg:text-2xl font-bold text-foreground">
+          <div className="space-y-4">
+            <h3 className="text-lg sm:text-xl lg:text-2xl font-bold text-foreground">
               Objetos Detectados ({detections.length})
             </h3>
             
@@ -417,32 +432,49 @@ const WebcamFeed = () => {
                 </CardContent>
               </Card>
             ) : (
-              <div className="space-y-3 max-h-96 overflow-y-auto">
-                {detections.map((detection) => (
+              <div className="space-y-3 max-h-80 sm:max-h-96 overflow-y-auto">
+                {detections.map((detection) => {
+                  const trackingKey = `${detection.label}-${detection.colorName}`;
+                  const tracked = trackedObjects.get(trackingKey);
+                  
+                  return (
                   <Card 
                     key={detection.id} 
                     className="bg-card/50 backdrop-blur-sm border-border/50"
                     style={{
                       borderLeftWidth: '4px',
-                      borderLeftColor: detection.isVehicle ? '#ff6b35' : '#00d2d3'
+                      borderLeftColor: detection.color
                     }}
                   >
-                    <CardContent className="p-4">
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <h4 className={`font-semibold capitalize flex items-center gap-2 ${
+                    <CardContent className="p-3 sm:p-4">
+                      <div className="flex justify-between items-start gap-2">
+                        <div className="flex-1 min-w-0">
+                          <h4 className={`font-semibold capitalize flex items-center gap-2 flex-wrap text-sm sm:text-base ${
                             detection.isVehicle ? 'text-primary' : 'text-foreground'
                           }`}>
                             {detection.label === 'car' && '🚗'}
                             {detection.label === 'motorcycle' && '🏍️'}
+                            <span className="truncate">{detection.label}</span>
+                            <Badge 
+                              variant="outline" 
+                              className="text-xs whitespace-nowrap"
+                              style={{ borderColor: detection.color, color: detection.color }}
+                            >
+                              {detection.colorName}
+                            </Badge>
                             {detection.isVehicle && <Badge variant="secondary" className="text-xs">VEÍCULO</Badge>}
-                            {detection.label}
                           </h4>
-                          <p className="text-sm text-muted-foreground">
-                            Confiança: {Math.round(detection.confidence * 100)}%
-                          </p>
+                          <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 text-xs sm:text-sm text-muted-foreground mt-1">
+                            <span>Confiança: {Math.round(detection.confidence * 100)}%</span>
+                            {tracked && tracked.isActive && (
+                              <span className="flex items-center gap-1 text-accent font-medium">
+                                <Clock className="w-3 h-3" />
+                                {tracked.totalTimeSeconds}s
+                              </span>
+                            )}
+                          </div>
                         </div>
-                         <div className="text-right text-sm space-y-1">
+                         <div className="text-right text-xs sm:text-sm space-y-1 flex-shrink-0">
                            <div className="text-primary font-semibold">
                              {detection.widthCm >= 100 
                                ? `${(detection.widthCm / 100).toFixed(1)}m × ${(detection.heightCm / 100).toFixed(1)}m`
@@ -450,78 +482,23 @@ const WebcamFeed = () => {
                              }
                            </div>
                            <div className="text-xs text-accent font-medium">
-                             📏 Distância: {detection.distance}cm
+                             📏 {detection.distance}cm
                            </div>
-                           <div className="text-xs text-muted-foreground">
+                           <div className="text-xs text-muted-foreground hidden sm:block">
                              {detection.width} × {detection.height}px
-                           </div>
-                           <div className="text-xs text-muted-foreground">
-                             Pos: ({detection.x}, {detection.y})
                            </div>
                          </div>
                       </div>
                     </CardContent>
                   </Card>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
 
-          {/* Registro de Objetos Detectados */}
-          <div className="space-y-4 xl:col-span-1">
-            <h3 className="text-xl lg:text-2xl font-bold text-foreground">
-              Registro de Objetos ({objectRecords.length})
-            </h3>
-            
-            {objectRecords.length === 0 ? (
-              <Card className="bg-card/50 backdrop-blur-sm border-border/50">
-                <CardContent className="p-6 text-center">
-                  <p className="text-muted-foreground">
-                    Nenhum objeto registrado ainda
-                  </p>
-                </CardContent>
-              </Card>
-            ) : (
-              <div className="space-y-3 max-h-96 overflow-y-auto">
-                {objectRecords
-                  .sort((a, b) => b.count - a.count)
-                  .map((record, index) => (
-                  <Card key={record.label} className="bg-card/50 backdrop-blur-sm border-border/50">
-                    <CardContent className="p-4">
-                      <div className="flex justify-between items-center">
-                        <div>
-                          <h4 className="font-semibold capitalize flex items-center gap-2">
-                            {record.label === 'car' && '🚗'}
-                            {record.label === 'motorcycle' && '🏍️'}
-                            {record.label === 'cell phone' && '📱'}
-                            {record.label === 'bottle' && '🍼'}
-                            {record.label === 'cup' && '☕'}
-                            {record.label === 'laptop' && '💻'}
-                            {record.label === 'book' && '📚'}
-                            {record.label}
-                          </h4>
-                          <p className="text-xs text-muted-foreground">
-                            Última detecção: {record.lastSeen.toLocaleTimeString()}
-                          </p>
-                        </div>
-                        <div className="text-right">
-                          <Badge variant="secondary" className="mb-1">
-                            {record.count}x visto
-                          </Badge>
-                          <div className="text-xs text-muted-foreground">
-                            Confiança média: {Math.round(record.avgConfidence * 100)}%
-                          </div>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Controle de Versão */}
-          <div className="space-y-4 xl:col-span-1">
+          {/* Controle de Versão e Reconhecimento de Texto */}
+          <div className="space-y-4 lg:col-span-2 xl:col-span-1">
             <VersionControl 
               onVersionChange={setCurrentFeatures}
               currentFeatures={currentFeatures}
@@ -537,10 +514,71 @@ const WebcamFeed = () => {
           </div>
         </div>
 
-        <div className="mt-12 text-center">
-          <div className="bg-card/30 backdrop-blur-sm border border-border/30 rounded-xl p-6 max-w-2xl mx-auto">
-            <h3 className="font-semibold text-foreground mb-2">Tecnologia Utilizada</h3>
-            <p className="text-sm text-muted-foreground">
+        {/* Histórico de Tracking - Seção separada */}
+        <div className="mt-6 lg:mt-8">
+          <h3 className="text-lg sm:text-xl lg:text-2xl font-bold text-foreground mb-4">
+            Histórico de Visualização ({trackedObjects.size})
+          </h3>
+          
+          {trackedObjects.size === 0 ? (
+            <Card className="bg-card/50 backdrop-blur-sm border-border/50">
+              <CardContent className="p-6 text-center">
+                <p className="text-sm sm:text-base text-muted-foreground">
+                  Nenhum objeto rastreado ainda
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
+              {Array.from(trackedObjects.entries())
+                .sort(([, a], [, b]) => b.totalTimeSeconds - a.totalTimeSeconds)
+                .map(([key, tracked]) => (
+                <Card 
+                  key={key} 
+                  className={`bg-card/50 backdrop-blur-sm border-border/50 ${
+                    tracked.isActive ? 'ring-2 ring-primary' : ''
+                  }`}
+                >
+                  <CardContent className="p-3 sm:p-4">
+                    <div className="space-y-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <h4 className="font-semibold capitalize text-sm flex items-center gap-1 flex-1 min-w-0">
+                          {tracked.objectType === 'car' && '🚗'}
+                          {tracked.objectType === 'motorcycle' && '🏍️'}
+                          {tracked.objectType === 'cell phone' && '📱'}
+                          {tracked.objectType === 'bottle' && '🍼'}
+                          {tracked.objectType === 'cup' && '☕'}
+                          {tracked.objectType === 'laptop' && '💻'}
+                          <span className="truncate">{tracked.objectType}</span>
+                        </h4>
+                        {tracked.isActive && (
+                          <Badge variant="default" className="text-xs flex-shrink-0">ATIVO</Badge>
+                        )}
+                      </div>
+                      
+                      <Badge variant="outline" className="text-xs">
+                        {tracked.color}
+                      </Badge>
+                      
+                      <div className="flex items-center justify-between text-xs text-muted-foreground pt-2 border-t border-border/30">
+                        <div className="flex items-center gap-1">
+                          <Clock className="w-3 h-3" />
+                          <span className="font-medium text-accent">{tracked.totalTimeSeconds}s</span>
+                        </div>
+                        <span>{tracked.detectionCount}x visto</span>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="mt-8 sm:mt-12 text-center">
+          <div className="bg-card/30 backdrop-blur-sm border border-border/30 rounded-xl p-4 sm:p-6 max-w-2xl mx-auto">
+            <h3 className="font-semibold text-foreground mb-2 text-sm sm:text-base">Tecnologia Utilizada</h3>
+            <p className="text-xs sm:text-sm text-muted-foreground">
               Powered by TensorFlow.js + COCO-SSD - Detecção de objetos em tempo real 
               diretamente no navegador, sem necessidade de servidor backend.
             </p>

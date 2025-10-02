@@ -4,7 +4,6 @@ import { Separator } from "@/components/ui/separator";
 
 const COCO_CLASSES = {
   vehicles: ["car", "motorcycle", "airplane", "bus", "train", "truck", "boat", "bicycle"],
-  people: ["person"],
   animals: ["bird", "cat", "dog", "horse", "sheep", "cow", "elephant", "bear", "zebra", "giraffe"],
   furniture: ["chair", "couch", "potted plant", "bed", "dining table", "toilet"],
   electronics: ["tv", "laptop", "mouse", "remote", "keyboard", "cell phone", "microwave", "oven", "toaster", "sink", "refrigerator"],
@@ -58,7 +57,6 @@ const ObjectsList = () => {
             <Card key={category} className="bg-card/50 backdrop-blur-sm border-border/50">
               <CardHeader>
                 <CardTitle className="capitalize text-foreground">
-                  {category === 'people' && '👥 '}
                   {category === 'animals' && '🐾 '}
                   {category === 'furniture' && '🏠 '}
                   {category === 'electronics' && '📱 '}

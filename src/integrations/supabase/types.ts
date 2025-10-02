@@ -14,6 +14,51 @@ export type Database = {
   }
   public: {
     Tables: {
+      changelogs: {
+        Row: {
+          created_at: string
+          description: string
+          id: string
+          is_published: boolean
+          release_date: string
+          technical_changes: string[]
+          title: string
+          type: string
+          updated_at: string
+          user_facing_changes: string[]
+          version: string
+          version_number: string
+        }
+        Insert: {
+          created_at?: string
+          description: string
+          id?: string
+          is_published?: boolean
+          release_date?: string
+          technical_changes?: string[]
+          title: string
+          type: string
+          updated_at?: string
+          user_facing_changes?: string[]
+          version: string
+          version_number: string
+        }
+        Update: {
+          created_at?: string
+          description?: string
+          id?: string
+          is_published?: boolean
+          release_date?: string
+          technical_changes?: string[]
+          title?: string
+          type?: string
+          updated_at?: string
+          user_facing_changes?: string[]
+          version?: string
+          version_number?: string
+        }
+        Relationships: []
+      }
       learned_objects: {
         Row: {
           avg_height_cm: number
@@ -100,6 +145,48 @@ export type Database = {
           object_type?: string
           pixel_height?: number
           pixel_width?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      object_tracking: {
+        Row: {
+          avg_confidence: number
+          color: string | null
+          created_at: string
+          detection_count: number
+          first_seen: string
+          id: string
+          last_seen: string
+          object_type: string
+          session_id: string | null
+          total_time_seconds: number
+          updated_at: string
+        }
+        Insert: {
+          avg_confidence: number
+          color?: string | null
+          created_at?: string
+          detection_count?: number
+          first_seen?: string
+          id?: string
+          last_seen?: string
+          object_type: string
+          session_id?: string | null
+          total_time_seconds?: number
+          updated_at?: string
+        }
+        Update: {
+          avg_confidence?: number
+          color?: string | null
+          created_at?: string
+          detection_count?: number
+          first_seen?: string
+          id?: string
+          last_seen?: string
+          object_type?: string
+          session_id?: string | null
+          total_time_seconds?: number
           updated_at?: string
         }
         Relationships: []
